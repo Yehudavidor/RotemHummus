@@ -16,6 +16,15 @@ import java.util.HashMap;
  */
 public class SlackMessagesController extends Controller {
 
+    private SlackMessageHandler handler;
+
+    private SlackMessageHandler getHandler() {
+        if (handler == null) {
+            handler = new SlackMessageHandler();
+        }
+        return handler;
+    }
+
     /**
      * An action that renders an HTML page with a welcome message.
      * The configuration in the <code>routes</code> file means that
@@ -35,6 +44,7 @@ public class SlackMessagesController extends Controller {
         String text = "";
         String channel = "";
         String token = "";
+        String timestamp = "";
         if (body.get("event") != null) {
             //System.out.println("text is: " + body.get("text").asText());
             JsonNode event = Json.toJson(body.get("event"));
@@ -42,28 +52,36 @@ public class SlackMessagesController extends Controller {
                 System.out.println("Got something from the bot");
                 if (event.get("subtype").asText().equals("bot_message")) {
                     System.out.println("ignoring this message");
-                    return ok();
+                    return ok().withHeader("X-Slack-No-Retry", "1");
                 }
             }
             text = event.get("text").asText();
+            timestamp = event.get("ts").asText();
             if (event.get("channel") != null) {
                 channel = event.get("channel").asText();
             }
         }
+//        if (!timestamp.equals(getHandler().getLastMessageTS())) {
+//            getHandler().setLastMessageTS(timestamp);
+//        } else {
+//            return (ok().withHeader("X-Slack-No-Retry", "1"));
+//        }
         class ReceiveMessage implements Runnable {
             String userInput;
             String channel;
             String token;
-            ReceiveMessage(String userInput, String channel, String token) {
+            String ts;
+            ReceiveMessage(String userInput, String channel, String token, String timestamp) {
                 this.userInput = userInput;
                 this.channel = channel;
                 this.token = token;
+                this.ts = timestamp;
             }
             public void run() {
-                receiveMessage(userInput, channel, token);
+                receiveMessage(userInput, channel, token, ts);
             }
         }
-        Thread t = new Thread(new ReceiveMessage(text, channel, token));
+        Thread t = new Thread(new ReceiveMessage(text, channel, token, timestamp));
         t.start();
         //SlackMessageHandler handler = new SlackMessageHandler();
         //boolean answer = handler.handleSlackMessage(text, channel, body.get("token").asText());
@@ -86,9 +104,12 @@ public class SlackMessagesController extends Controller {
         return ok(Json.toJson(result));
     }
 
-    private void receiveMessage(String text, String channel, String token) {
-        SlackMessageHandler handler = new SlackMessageHandler();
-        boolean answer = handler.handleSlackMessage(text, channel, token);
+    private void receiveMessage(String text, String channel, String token, String ts) {
+        SlackMessageHandler handler = getHandler();
+//        if (ts.equals(handler.getLastMessageTS())) {
+//            return;
+//        }
+        boolean answer = handler.handleSlackMessage(text, channel, token, ts);
         if (!answer) {
             System.out.println("Failed sending message to the user");
         }
